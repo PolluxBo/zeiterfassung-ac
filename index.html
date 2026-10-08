@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Zeiterfassung AC</title>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Zeiterfassung AC">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="theme-color" content="#eef1f4" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0f151b" media="(prefers-color-scheme: dark)">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<link rel="icon" type="image/png" href="icons/icon-192.png">
+<script src="vendor/xlsx.full.min.js"></script>
+<style>
+/* Layout: eine Spalte wie eine Stempelkarte – Wochenleiste oben, Erfassung, Tagesliste, Versand */
+:root {
+  --bg: #eef1f4;
+  --surface: #ffffff;
+  --ink: #17212c;
+  --muted: #5d6b7a;
+  --line: #d5dce3;
+  --accent: #1f5f8b;
+  --accent-ink: #ffffff;
+  --accent-soft: #dceaf4;
+  --stamp: #c2410c;
+  --danger: #b42318;
+  --f-body: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, "Segoe UI", sans-serif;
+  --f-display: -apple-system, BlinkMacSystemFont, "SF Pro Display", system-ui, sans-serif;
+  --f-num: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --r: 12px;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0f151b; --surface: #18212a; --ink: #e6ecf1; --muted: #93a2b1; --line: #2a3642;
+    --accent: #5ea9dd; --accent-ink: #0b1620; --accent-soft: #1b3346; --stamp: #f08a4b;
+    --danger: #f07167; color-scheme: dark;
+  }
+}
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html { background: var(--bg); }
+body {
+  margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.45 var(--f-body); -webkit-text-size-adjust: 100%;
+  padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
+}
+.wrap { max-width: 680px; margin: 0 auto; padding-inline: 16px; padding-block: 12px 48px; display: grid; gap: 16px; }
+header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+h1 { font: 700 1.7rem/1.1 var(--f-display); margin: 0; letter-spacing: -.01em; }
+h1 b { color: var(--accent); }
+h2 { font: 600 .78rem/1 var(--f-body); text-transform: uppercase; letter-spacing: .09em; color: var(--muted); margin: 0; }
+.status { font-size: .8rem; color: var(--muted); }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 16px; display: grid; gap: 14px; min-width: 0; }
+.num { font-family: var(--f-num); font-variant-numeric: tabular-nums; }
+
+.weekbar { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.weekbar .kw { font: 600 1rem var(--f-display); text-align: center; }
+.iconbtn { width: 44px; height: 44px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); font-size: 1.2rem; cursor: pointer; }
+.days { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
+.day { border: 1px solid var(--line); background: var(--bg); color: var(--ink); border-radius: 10px; padding: 8px 2px; display: grid; gap: 2px; justify-items: center; cursor: pointer; font: inherit; }
+.day .wd { font: 600 .75rem var(--f-body); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.day .dt { font: 600 1.1rem var(--f-display); }
+.day .hs { font: 500 .72rem var(--f-num); color: var(--muted); }
+.day.has .hs { color: var(--accent); }
+.day.today .dt { color: var(--stamp); }
+.day[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.day[aria-pressed="true"] .wd, .day[aria-pressed="true"] .hs, .day[aria-pressed="true"] .dt { color: var(--accent-ink); }
+.weeksum { display: flex; justify-content: space-between; font-size: .85rem; color: var(--muted); }
+
+label { font-size: .85rem; font-weight: 600; display: grid; gap: 6px; }
+input[type=text], input[type=email], input[type=time], textarea {
+  font: 400 17px var(--f-body); color: var(--ink); background: var(--bg); border: 1px solid var(--line);
+  border-radius: 10px; padding: 11px 12px; width: 100%; min-width: 0;
+}
+textarea { resize: vertical; min-height: 46px; }
+input:focus-visible, textarea:focus-visible, button:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.duration { display: grid; grid-template-columns: 44px 1fr 44px; gap: 8px; align-items: center; }
+.duration output { text-align: center; font: 600 2rem/1 var(--f-num); font-variant-numeric: tabular-nums; }
+.duration output small { font: 500 .8rem var(--f-body); color: var(--muted); margin-left: 4px; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { border: 1px solid var(--line); background: var(--bg); color: var(--ink); border-radius: 999px; padding: 7px 12px; font: 500 .85rem var(--f-num); cursor: pointer; }
+.chip.on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+.kchips .chip { font-family: var(--f-body); }
+.row { display: flex; gap: 8px; flex-wrap: wrap; }
+.btn { border: 0; border-radius: 10px; padding: 13px 16px; font: 600 1rem var(--f-body); cursor: pointer; background: var(--accent); color: var(--accent-ink); text-align: center; text-decoration: none; }
+.btn.ghost { background: transparent; color: var(--ink); border: 1px solid var(--line); }
+.btn.wide { flex: 1 1 auto; }
+.btn:disabled { opacity: .45; cursor: default; }
+
+.list { display: grid; }
+.entry { display: grid; grid-template-columns: 1fr auto; gap: 2px 12px; padding: 12px 0; border-top: 1px solid var(--line); cursor: pointer; }
+.entry:first-child { border-top: 0; }
+.entry .k { font-weight: 600; min-width: 0; overflow-wrap: anywhere; }
+.entry .t { font: 600 1rem var(--f-num); text-align: right; }
+.entry .n { grid-column: 1 / -1; color: var(--muted); font-size: .88rem; overflow-wrap: anywhere; }
+.entry.editing { background: var(--accent-soft); margin-inline: -16px; padding-inline: 16px; }
+.total { display: flex; justify-content: space-between; align-items: baseline; border-top: 2px solid var(--ink); padding-top: 10px; font-weight: 600; }
+.total .num { font-size: 1.3rem; }
+.empty { color: var(--muted); font-size: .92rem; padding: 6px 0; }
+.dayhead { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.dayhead .d { font: 600 1.1rem var(--f-display); }
+
+.recipient { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; background: var(--bg); border: 1px dashed var(--line); border-radius: 10px; padding: 10px 12px; }
+.recipient .addr { font: 500 .95rem var(--f-num); overflow-wrap: anywhere; flex: 1 1 180px; min-width: 0; -webkit-user-select: all; user-select: all; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.seg button { border: 0; background: transparent; color: var(--ink); padding: 9px 14px; font: 500 .9rem var(--f-body); cursor: pointer; }
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--surface); }
+.hint { font-size: .85rem; color: var(--muted); margin: 0; }
+.steps { margin: 0; padding-left: 1.2em; font-size: .88rem; color: var(--muted); display: grid; gap: 4px; }
+.toast { position: fixed; left: 50%; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); background: var(--ink); color: var(--surface); padding: 10px 16px; border-radius: 10px; font-size: .92rem; max-width: calc(100% - 32px); z-index: 10; }
+.install { background: var(--accent-soft); border: 1px solid var(--accent); border-radius: var(--r); padding: 12px 14px; font-size: .9rem; display: flex; gap: 10px; align-items: flex-start; }
+.install p { margin: 0; flex: 1; }
+.install button { border: 0; background: transparent; color: var(--accent); font: 600 .9rem var(--f-body); cursor: pointer; padding: 0 4px; }
+details summary { cursor: pointer; font-weight: 600; }
+.sub { font: 600 .85rem var(--f-body); margin: 4px 0 0; }
+.toggle { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-weight: 600; font-size: .9rem; }
+.toggle input { width: 22px; height: 22px; accent-color: var(--accent); }
+@media (prefers-reduced-motion: no-preference) { .btn, .chip, .day { transition: background .15s, border-color .15s; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Zeiterfassung <b>AC</b></h1>
+    <span class="status" id="status">Auf diesem Gerät gespeichert</span>
+  </header>
+
+  <div class="install" id="installHint" hidden>
+    <p>Als App installieren: In Safari unten auf <b>Teilen</b> tippen und dann <b>„Zum Home-Bildschirm“</b> wählen.</p>
+    <button id="installClose" aria-label="Hinweis schließen">OK</button>
+  </div>
+
+  <section class="panel" aria-label="Woche">
+    <div class="weekbar">
+      <button class="iconbtn" id="prevWeek" aria-label="Vorherige Woche">‹</button>
+      <button class="kw" id="kwLabel" style="border:0;background:none;color:inherit;cursor:pointer" aria-label="Zur aktuellen Woche"></button>
+      <button class="iconbtn" id="nextWeek" aria-label="Nächste Woche">›</button>
+    </div>
+    <div class="days" id="days"></div>
+    <div class="weeksum"><span>Woche gesamt (Mo–Fr)</span><span class="num" id="weekTotal">0:00 h</span></div>
+  </section>
+
+  <section class="panel" aria-label="Erfassung">
+    <div class="dayhead"><h2 id="formTitle">Neuer Eintrag</h2><span class="status" id="formDay"></span></div>
+    <label for="kunde">Kunde
+      <input type="text" id="kunde" autocomplete="off" autocapitalize="words" placeholder="z. B. Müller GmbH" list="kundenListe">
+      <datalist id="kundenListe"></datalist>
+    </label>
+    <div class="chips kchips" id="kundenChips"></div>
+    <div style="display:grid;gap:8px">
+      <span style="font-size:.85rem;font-weight:600">Zeitaufwand</span>
+      <div class="duration">
+        <button class="iconbtn" id="minus" aria-label="15 Minuten weniger">−</button>
+        <output id="dur" class="num">1:00<small>h</small></output>
+        <button class="iconbtn" id="plus" aria-label="15 Minuten mehr">+</button>
+      </div>
+      <div class="chips" id="durChips"></div>
+    </div>
+    <label for="notiz">Tätigkeit / Notiz (optional)
+      <textarea id="notiz" rows="2" placeholder="z. B. Wartung Server, Telefonsupport"></textarea>
+    </label>
+    <div class="row">
+      <button class="btn wide" id="save">Eintrag speichern</button>
+      <button class="btn ghost" id="cancelEdit" hidden>Abbrechen</button>
+      <button class="btn ghost" id="delete" hidden style="color:var(--danger)">Löschen</button>
+    </div>
+  </section>
+
+  <section class="panel" aria-label="Tagesübersicht">
+    <div class="dayhead"><h2>Einträge</h2><span class="d" id="listDay"></span></div>
+    <div class="list" id="list"></div>
+    <div class="total"><span>Summe Tag</span><span class="num" id="dayTotal">0:00 h</span></div>
+  </section>
+
+  <section class="panel" aria-label="Auswertung senden">
+    <h2>Auswertung als Excel senden</h2>
+    <div class="row" style="align-items:center;justify-content:space-between">
+      <div class="seg" role="group" aria-label="Zeitraum">
+        <button id="rangeDay" aria-pressed="true">Gewählter Tag</button>
+        <button id="rangeWeek" aria-pressed="false">Ganze Woche</button>
+      </div>
+      <span class="status num" id="rangeInfo"></span>
+    </div>
+    <div class="recipient">
+      <span class="addr" id="addr">Keine Empfänger-Adresse hinterlegt</span>
+      <button class="btn ghost" id="copyAddr">Kopieren</button>
+    </div>
+    <div class="row">
+      <button class="btn wide" id="export">Excel per Mail senden</button>
+    </div>
+    <ol class="steps">
+      <li>„Excel per Mail senden“ tippen.</li>
+      <li>Im Teilen-Menü <b>Mail</b> wählen. Die Excel-Datei hängt an.</li>
+      <li>Ins Feld „An“ tippen, <b>Einsetzen</b> wählen (Adresse ist kopiert) und senden.</li>
+    </ol>
+  </section>
+
+  <section class="panel" aria-label="Einstellungen">
+    <details id="settingsBox">
+      <summary>Einstellungen</summary>
+      <div style="display:grid;gap:12px;margin-top:12px">
+        <label for="email">Empfänger-E-Mail für die Auswertung
+          <input type="email" id="email" inputmode="email" autocomplete="email" autocapitalize="off" placeholder="buero@beispiel.de">
+        </label>
+        <label for="mitarbeiter">Name (erscheint in der Excel-Datei)
+          <input type="text" id="mitarbeiter" autocomplete="name" placeholder="Vorname Nachname">
+        </label>
+        <button class="btn" id="saveSettings">Einstellungen speichern</button>
+
+        <p class="sub">Datensicherung</p>
+        <p class="hint">Die Daten liegen nur auf diesem Gerät. Sichere sie ab und zu, zum Beispiel in iCloud Drive, oder übertrage sie so auf ein anderes Gerät.</p>
+        <div class="row">
+          <button class="btn ghost wide" id="backup">Sicherung erstellen</button>
+          <button class="btn ghost wide" id="restoreBtn">Sicherung laden</button>
+          <input type="file" id="restoreFile" accept=".json,application/json" hidden>
+        </div>
+      </div>
+    </details>
+  </section>
+  <p class="hint" style="text-align:center">Zeiterfassung AC · Version 1.0</p>
+</div>
+<div class="toast" id="toast" role="status" hidden></div>
+
+<script src="app.js"></script>
+</body>
+</html>
