@@ -97,16 +97,124 @@
     es.forEach(e => {
       const r = document.createElement("div");
       r.className = "entry" + (e.id === state.editId ? " editing" : "");
-      r.tabIndex = 0; r.setAttribute("role", "button");
       const k = document.createElement("span"); k.className = "k"; k.textContent = e.kunde;
       const t = document.createElement("span"); t.className = "t"; t.textContent = fmtMin(e.min) + " h";
-      r.append(k, t);
-      if (e.notiz) { const n = document.createElement("span"); n.className = "n"; n.textContent = e.notiz; r.appendChild(n); }
+      const b = document.createElement("button"); b.className = "edit"; b.textContent = "Ändern";
+      b.setAttribute("aria-label", `Eintrag ${e.kunde} ändern`);
+      const n = document.createElement("span");
+      n.className = "n" + (e.notiz ? "" : " none");
+      n.textContent = e.notiz || "keine Tätigkeit angegeben";
+      r.append(k, t, b, n);
       r.onclick = () => startEdit(e);
-      r.onkeydown = ev => { if (ev.key === "Enter") startEdit(e); };
       list.appendChild(r);
     });
     $("dayTotal").textContent = fmtMin(sum(es)) + " h";
+    $("editHint").hidden = !es.length;
+    renderPerK($("dayPerK"), es, "Je Kunde");
+  }
+
+  // Summen je Kunde (nur sinnvoll ab zwei Kunden)
+  function renderPerK(box, es, title) {
+    const perK = {};
+    es.forEach(e => { perK[e.kunde] = (perK[e.kunde] || 0) + e.min; });
+    const list = Object.entries(perK).sort((a, b) => b[1] - a[1]);
+    box.textContent = "";
+    box.hidden = list.length < 2;
+    if (box.hidden) return;
+    const h = document.createElement("h2"); h.textContent = title; h.style.marginBottom = "4px"; box.appendChild(h);
+    list.forEach(([k, m]) => {
+      const row = document.createElement("div");
+      const a = document.createElement("span"); a.textContent = k;
+      const b = document.createElement("span"); b.className = "num"; b.textContent = fmtMin(m) + " h";
+      row.append(a, b); box.appendChild(row);
+    });
+  }
+
+  function renderWeekList() {
+    const box = $("weekList"); box.textContent = "";
+    $("wkLabel2").textContent = `KW ${isoWeek(state.monday).week}`;
+    const all = [];
+    weekKeys().forEach(key => {
+      const d = fromKey(key), es = store.getDay(key);
+      all.push(...es);
+      const wrap = document.createElement("div");
+      wrap.className = "wday" + (key === state.sel ? " sel" : "");
+      const h = document.createElement("button"); h.className = "wday-h";
+      h.innerHTML = `<span>${WD_LONG[d.getDay()]}, ${fmtDate(d).slice(0, 6)}</span><span class="num">${fmtMin(sum(es))} h</span>`;
+      h.onclick = () => selectDay(key, true);
+      wrap.appendChild(h);
+      if (!es.length) {
+        const p = document.createElement("div"); p.className = "wempty"; p.textContent = "keine Einträge"; wrap.appendChild(p);
+      }
+      es.forEach(e => {
+        const l = document.createElement("div"); l.className = "wline";
+        l.setAttribute("role", "button"); l.tabIndex = 0;
+        const k = document.createElement("span"); k.className = "k"; k.textContent = e.kunde;
+        const t = document.createElement("span"); t.className = "num"; t.textContent = fmtMin(e.min) + " h";
+        l.append(k, t);
+        if (e.notiz) { const n = document.createElement("span"); n.className = "n"; n.textContent = e.notiz; l.appendChild(n); }
+        l.onclick = () => { selectDay(key, false); startEdit(e); };
+        l.onkeydown = ev => { if (ev.key === "Enter") l.onclick(); };
+        wrap.appendChild(l);
+      });
+      box.appendChild(wrap);
+    });
+    $("weekTotal2").textContent = fmtMin(sum(all)) + " h";
+    renderPerK($("weekPerK"), all, "Je Kunde (Woche)");
+  }
+
+  function selectDay(key, scroll) {
+    state.sel = key; cancelEdit(); renderAll();
+    if (scroll) $("list").closest(".panel").scrollIntoView({ block: "start", behavior: "smooth" });
+  }
+
+  // ---------- Kunden verwalten ----------
+  function countByKunde() {
+    const c = {};
+    Object.values(store.allDays()).forEach(es => (es || []).forEach(e => { c[e.kunde] = (c[e.kunde] || 0) + 1; }));
+    return c;
+  }
+
+  function renderKundenAdmin() {
+    const box = $("kundenAdmin"); box.textContent = "";
+    const counts = countByKunde();
+    const names = [...new Set([...(state.settings.kunden || []), ...Object.keys(counts)])]
+      .sort((a, b) => a.localeCompare(b, "de"));
+    if (!names.length) {
+      const p = document.createElement("p"); p.className = "hint"; p.textContent = "Noch keine Kunden erfasst."; box.appendChild(p); return;
+    }
+    names.forEach(name => {
+      const row = document.createElement("div"); row.className = "krow";
+      const inp = document.createElement("input"); inp.type = "text"; inp.value = name; inp.setAttribute("aria-label", `Kunde ${name} umbenennen`);
+      const cnt = document.createElement("span"); cnt.className = "cnt"; cnt.textContent = `${counts[name] || 0}×`;
+      const ok = document.createElement("button"); ok.className = "ok"; ok.textContent = "Umbenennen"; ok.hidden = true;
+      const rm = document.createElement("button"); rm.textContent = "Entfernen";
+      rm.hidden = !(state.settings.kunden || []).includes(name);
+      inp.oninput = () => { const changed = inp.value.trim() && inp.value.trim() !== name; ok.hidden = !changed; rm.hidden = changed || !(state.settings.kunden || []).includes(name); };
+      inp.onkeydown = ev => { if (ev.key === "Enter" && !ok.hidden) ok.click(); };
+      ok.onclick = () => renameKunde(name, inp.value.trim());
+      rm.onclick = () => {
+        state.settings.kunden = (state.settings.kunden || []).filter(k => k !== name);
+        saveSettingsState(); renderKunden(); renderKundenAdmin(); toast(`„${name}“ aus der Schnellauswahl entfernt`);
+      };
+      row.append(inp, cnt, ok, rm); box.appendChild(row);
+    });
+  }
+
+  function renameKunde(oldName, newName) {
+    if (!newName || newName === oldName) return;
+    let n = 0;
+    Object.entries(store.allDays()).forEach(([key, es]) => {
+      let changed = false;
+      const upd = (es || []).map(e => { if (e.kunde === oldName) { changed = true; n++; return { ...e, kunde: newName }; } return e; });
+      if (changed) store.setDay(key, upd);
+    });
+    const ks = (state.settings.kunden || []).map(k => k === oldName ? newName : k);
+    state.settings.kunden = ks.filter((k, i) => ks.findIndex(x => x.toLowerCase() === k.toLowerCase()) === i);
+    saveSettingsState();
+    if ($("kunde").value.trim() === oldName) $("kunde").value = newName;
+    renderKunden(); renderKundenAdmin(); renderAll();
+    toast(`Umbenannt in „${newName}“ (${n} ${n === 1 ? "Eintrag" : "Einträge"})`);
   }
 
   function renderDur() {
@@ -137,7 +245,7 @@
     $("export").disabled = !es.length;
   }
 
-  function renderAll() { renderWeek(); renderList(); renderSend(); }
+  function renderAll() { renderWeek(); renderList(); renderWeekList(); renderSend(); }
 
   // ---------- Erfassung ----------
   function setDur(m) { state.dur = Math.max(15, Math.min(24 * 60, m)); renderDur(); }
@@ -149,7 +257,7 @@
     $("save").textContent = "Änderung speichern";
     $("cancelEdit").hidden = $("delete").hidden = false;
     renderList();
-    $("kunde").scrollIntoView({ block: "center", behavior: "smooth" });
+    $("kunde").closest(".panel").scrollIntoView({ block: "start", behavior: "smooth" });
   }
 
   function cancelEdit() {
@@ -346,7 +454,7 @@
           });
           saveSettingsState();
           $("email").value = state.settings.email; $("mitarbeiter").value = state.settings.name;
-          renderKunden();
+          renderKunden(); renderKundenAdmin();
         }
         renderAll();
         toast(`Sicherung geladen: ${n} Einträge ergänzt`);
@@ -403,7 +511,8 @@
   $("email").value = state.settings.email || "";
   $("mitarbeiter").value = state.settings.name || "";
   if (!state.settings.email) $("settingsBox").open = true;
-  renderDur(); renderKunden(); renderAll();
+  $("settingsBox").addEventListener("toggle", () => { if ($("settingsBox").open) renderKundenAdmin(); });
+  renderDur(); renderKunden(); renderKundenAdmin(); renderAll();
 
   if ("serviceWorker" in navigator && location.protocol === "https:") {
     navigator.serviceWorker.register("sw.js").catch(() => {});
