@@ -393,12 +393,6 @@
   $("restoreBtn").onclick = () => $("restoreFile").click();
   $("restoreFile").onchange = e => { const f = e.target.files[0]; if (f) restore(f); e.target.value = ""; };
 
-  // Hinweis zur Installation nur in Safari (nicht als installierte App) zeigen
-  const standalone = window.navigator.standalone === true || window.matchMedia("(display-mode: standalone)").matches;
-  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
-  if (isIOS && !standalone && !store.get("installHintClosed", false)) $("installHint").hidden = false;
-  $("installClose").onclick = () => { $("installHint").hidden = true; store.set("installHintClosed", true); };
-
   // Beim Zurückkehren in die App den heutigen Tag aktualisieren
   document.addEventListener("visibilitychange", () => { if (!document.hidden) renderWeek(); });
 

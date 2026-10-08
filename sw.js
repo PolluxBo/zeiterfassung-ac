@@ -1,5 +1,5 @@
 // Offline-Cache: Bei neuer Version CACHE hochzählen.
-const CACHE = "zac-v1";
+const CACHE = "zac-v2";
 const FILES = [
   "./",
   "index.html",
